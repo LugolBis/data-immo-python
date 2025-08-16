@@ -2,11 +2,13 @@ beautifulsoup4==4.13.4
 bs4==0.0.2
 certifi==2025.8.3
 charset-normalizer==3.4.3
+dotenv==0.9.9
 idna==3.10
 loguru==0.7.3
 mypy==1.17.1
 mypy-extensions==1.1.0
 pathspec==0.12.1
+python-dotenv==1.1.1
 requests==2.32.4
 result==0.17.0
 soupsieve==2.7
