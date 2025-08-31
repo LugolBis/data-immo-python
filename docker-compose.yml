@@ -1,0 +1,18 @@
+services:
+  dremio:
+    image: dremio/dremio-oss
+    container_name: dremio
+    ports:
+      - "9047:9047"   # Interface web de Dremio
+      - "31010:31010" # Clients ODBC/JDBC
+      - "45678:45678"
+      - "32010:32010"
+    volumes:
+      - dremio_data:/opt/dremio/data
+      - dremio_local:/opt/dremio/local
+      - ./data/DVF:/data/DVF
+    restart: unless-stopped
+
+volumes:
+  dremio_data:
+  dremio_local:
