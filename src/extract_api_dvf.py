@@ -1,5 +1,5 @@
 from utils import *
-from typing import Any, AnyStr
+from typing import Any
 import requests
 from requests import Response
 import json
@@ -7,6 +7,10 @@ import os
 from datetime import date
 import time
 import re
+from geometry import split_geometry
+from transform_api_dvf import transform_api_data
+from tables import Mutation, Classes, write_mutations_to_parquet, write_classes_to_parquet
+from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -42,10 +46,13 @@ def api_post(endpoint: str, headers: dict = HEADERS, data: dict = {}, filters: d
         try:
             return Ok(response)
         except Exception as error:
+            logger.error(error)
             return Err(f"Failed to convert to json format the following content :\n{response.reason}\nError occured : {error}")
     elif response.status_code == 402:
+        logger.error("Error 402")
         return Err(f"Failed to POST '{url}' status code : 402 - Ecxceed request quota")
     else:
+        logger.error(f"Error {response.status_code}")
         return Err(f"Failed to POST '{url}', status code : {response.status_code} - {response.reason}")
     
 def get_department(path: str) -> Result[dict, str]:
@@ -55,8 +62,10 @@ def get_department(path: str) -> Result[dict, str]:
         if isinstance(data, dict):
             return Ok(data)
         else:
+            logger.error(f"data={data}")
             return Err(f"Inconsistant data from the file {path} :\n{data}")
     except Exception as error:
+        logger.error(error)
         return Err(f"Error occurs when try to get the data from {path} :\n{error}")
     
 def process_feature(feature_id: str, idg: int, data: dict) -> Result[int, str]:
@@ -74,11 +83,17 @@ def process_feature(feature_id: str, idg: int, data: dict) -> Result[int, str]:
 
         match (api_response, failed_retry):
             case (Ok(response), default):
-                content = response.text()
-                mut_data, cls_data = transform_api_data(content, idg)
-
+                content: str = response.text
+                try:
+                    new_idg, mut_data, cls_data = transform_api_data(content, idg)
+                except Exception as error:
+                    logger.error(error)
+                    raise error
+                
+                idg = new_idg
                 mutations.extend(mut_data)
                 classes.extend(cls_data)
+
                 buffer.pop(0)
                 idg += 1
                 break
@@ -104,9 +119,6 @@ def process_feature(feature_id: str, idg: int, data: dict) -> Result[int, str]:
                             case Err(message):
                                 logger.error(message)
                                 break
-                            case default:
-                                logger.error("Impossible")
-                                break
                     else:
                         logger.error("Failed to get the key 'geojson'")
                     break
@@ -118,8 +130,14 @@ def process_feature(feature_id: str, idg: int, data: dict) -> Result[int, str]:
     classes_path = os.path.join(TARGET_FOLDER, f"classes_{feature_id}.parquet")
 
     if len(mutations) > 0:
-        # TODO! write_parque_data()
-        return Ok(idg)
+        try:
+            write_mutations_to_parquet(mutations, mutations_path)
+            write_classes_to_parquet(classes, classes_path)
+            return Ok(idg)
+        except Exception as error:
+            message = f"{error}"
+            logger.error(message)
+            return Err(message)
     else:
         return Err(f"Incomplete values {feature_id}")
 
@@ -140,29 +158,35 @@ def process_features(features: list[dict], idg: int, dpt: int) -> Result[int, st
 
     return Ok(idg)
 
-def set_up(folder_path: str) -> Result[os._ScandirIterator[AnyStr@scandir], str]:
+def set_up(folder_path: str) -> Result[Any, str]:
     if os.path.exists(TARGET_FOLDER) == False:
         try:
             os.makedirs(TARGET_FOLDER, exist_ok=True)
         except Exception as error:
             return Err(f"{error}")
     
-    entries = os.scandir(TARGET_FOLDER)
+    entries = os.scandir(folder_path)
     return Ok(entries)
 
 def main(folder_path: str) -> Result[str, str]:
     match set_up(folder_path):
         case Ok(entries):
             dpt = 1
+            idg = 0
 
             for entry in entries:
                 if entry.is_file():
-                    match get_department(entry.name):
+                    match get_department(entry.path):
                         case Ok(map):
                             features = map['features']
-                            if process_features(features).is_err():
-                                logger.error(f"Failed to process the features of the departement {dpt}")
+                            result = process_features(features, idg, dpt)
                             
+                            match result:
+                                case Ok(nb):
+                                    idg = nb
+                                    break
+                                case Err(message):
+                                    logger.error(f"Failed to process the features of the departement {dpt}")
                             dpt+=1
                             break
                         case Err(message):
@@ -170,17 +194,11 @@ def main(folder_path: str) -> Result[str, str]:
                             break
                         case default:
                             break
-
-            break
+            return Ok("Successfully extract the data !")
         case Err(message):
             logger.error(message)
             return Err(message)
-
-            break
         case default:
-            break
+            logger.error("Impossible")
+            return Err("...")
     
-    return Ok("Successfully extract the data !")
-    
-if __name__ == '__main__':
-    main("data/FranceGeoJSON")

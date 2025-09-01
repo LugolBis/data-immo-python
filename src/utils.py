@@ -1,5 +1,4 @@
 from loguru import logger
-from dotenv import load_dotenv
 from result import Ok, Err, Result, is_ok, is_err
 
 logger.add(
