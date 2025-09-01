@@ -44,11 +44,10 @@ def generate_views(folder_path: str) -> Tuple[bool, str]:
         return False, f"Error generating views: {e}"
 
 def run_command(args: List[str]) -> None:
-    dbt_path = Path(".venv/bin/dbt")
     
     try:
         result = subprocess.run(
-            [str(dbt_path)] + args,
+            ["dbt"] + args,
             check=True,
             capture_output=True,
             text=True
